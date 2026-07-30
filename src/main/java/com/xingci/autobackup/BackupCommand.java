@@ -17,7 +17,7 @@ import net.minecraft.server.permissions.PermissionLevel;
 
 public class BackupCommand {
 
-    private static final Permission BACKUP_PERMISSION = new Permission.HasCommandLevel(PermissionLevel.OWNERS);
+    private static final Permission BACKUP_PERMISSION = new Permission.HasCommandLevel(PermissionLevel.ALL);
 
     public static void register() {
         CommandRegistrationCallback.EVENT.register((dispatcher, context, selection) -> {
@@ -40,6 +40,15 @@ public class BackupCommand {
             backupCommand.then(
                     Commands.literal("list")
                             .executes(BackupCommand::executeBackupList)
+            );
+
+            // /backup del <name> - Delete a backup
+            backupCommand.then(
+                    Commands.literal("del")
+                            .then(
+                                    Commands.argument("name", StringArgumentType.string())
+                                            .executes(BackupCommand::executeBackupDelete)
+                            )
             );
 
             dispatcher.register(backupCommand);
@@ -117,6 +126,33 @@ public class BackupCommand {
             return 1;
         } catch (IOException e) {
             source.sendFailure(Component.literal("列出备份失败: " + e.getMessage()));
+            return 0;
+        }
+    }
+
+    private static int executeBackupDelete(CommandContext<CommandSourceStack> context) {
+        CommandSourceStack source = context.getSource();
+        MinecraftServer server = source.getServer();
+        String name = StringArgumentType.getString(context, "name");
+        
+        // Validate name
+        if (name == null || name.trim().isEmpty()) {
+            source.sendFailure(Component.literal("备份名称不能为空!"));
+            return 0;
+        }
+        
+        // Sanitize name
+        String sanitizedName = name.replaceAll("[^a-zA-Z0-9_\\-\\u4e00-\\u9fa5]", "_");
+        
+        try {
+            BackupManager.deleteBackup(server, sanitizedName);
+            source.sendSuccess(
+                    () -> Component.literal("备份已删除: " + sanitizedName),
+                    false
+            );
+            return 1;
+        } catch (IOException e) {
+            source.sendFailure(Component.literal("删除备份失败: " + e.getMessage()));
             return 0;
         }
     }

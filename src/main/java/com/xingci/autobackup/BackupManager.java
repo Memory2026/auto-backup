@@ -156,6 +156,47 @@ public class BackupManager {
     }
 
     /**
+     * Delete a backup by name
+     */
+    public static void deleteBackup(MinecraftServer server, String backupName) throws IOException {
+        Path backupDir = getBackupDirectory(server);
+        String sanitizedName = sanitizeName(backupName);
+        Path backupPath = backupDir.resolve(sanitizedName);
+
+        if (!Files.exists(backupPath)) {
+            throw new IOException("备份不存在: " + backupName);
+        }
+
+        deleteDirectory(backupPath);
+        AutoBackup.LOGGER.info("备份已删除: " + sanitizedName);
+    }
+
+    /**
+     * Recursively delete a directory
+     */
+    private static void deleteDirectory(Path directory) throws IOException {
+        Files.walkFileTree(directory, new SimpleFileVisitor<>() {
+            @Override
+            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
+                Files.delete(file);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult postVisitDirectory(Path dir, IOException exc) throws IOException {
+                Files.delete(dir);
+                return FileVisitResult.CONTINUE;
+            }
+
+            @Override
+            public FileVisitResult visitFileFailed(Path file, IOException exc) {
+                AutoBackup.LOGGER.warn("删除文件失败: " + file + " - " + exc.getMessage());
+                return FileVisitResult.CONTINUE;
+            }
+        });
+    }
+
+    /**
      * Recursively copy a directory
      */
     private static void copyDirectory(Path source, Path target) throws IOException {
