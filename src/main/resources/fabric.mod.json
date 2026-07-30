@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "auto-backup",
+	"version": "${version}",
+	"name": "Auto Backup",
+	"description": "A server-side backup mod that provides /backup commands for creating and managing world backups.",
+	"authors": [
+		"xingci"
+	],
+	"contact": {
+		"homepage": "https://fabricmc.net/"
+	},
+	"license": "MIT",
+	"icon": "assets/auto-backup/icon.png",
+	"environment": "*",
+	"entrypoints": {
+		"main": [
+			"com.xingci.autobackup.AutoBackup"
+		]
+	},
+	"mixins": [
+		"auto-backup.mixins.json"
+	],
+	"depends": {
+		"fabricloader": ">=0.19.3",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}
