@@ -103,7 +103,7 @@ public class BackupManager {
         if (sanitizedName.isEmpty()) {
 
             throw new IOException(
-                    "The backup name cannot be empty"
+                    "备份名称不能为空"
             );
         }
 
@@ -116,20 +116,20 @@ public class BackupManager {
                 .equals(backupDir.normalize())) {
 
             throw new IOException(
-                    "Invalid backup name"
+                    "无效的备份名称"
             );
         }
 
         if (Files.exists(backupPath)) {
 
             throw new IOException(
-                    "The backup already exists: "
+                    "备份已存在: "
                             + sanitizedName
             );
         }
 
         AutoBackup.LOGGER.info(
-                "Start creating the world backup: {}",
+                "开始创建世界备份: {}",
                 sanitizedName
         );
 
@@ -151,7 +151,7 @@ public class BackupManager {
             } catch (IOException cleanupException) {
 
                 AutoBackup.LOGGER.warn(
-                        "Failed to delete the incomplete world backup: {}",
+                        "删除不完整世界备份失败: {}",
                         cleanupException.getMessage()
                 );
             }
@@ -160,7 +160,7 @@ public class BackupManager {
         }
 
         AutoBackup.LOGGER.info(
-                "The world backup has been created: {}",
+                "世界备份已创建: {}",
                 sanitizedName
         );
 
@@ -193,7 +193,7 @@ public class BackupManager {
 
         if (worldPath == null) {
             throw new IllegalStateException(
-                    "The world Catalogue cannot be obtained"
+                    "无法获取世界目录"
             );
         }
 
@@ -202,7 +202,7 @@ public class BackupManager {
 
         if (savesDir == null) {
             throw new IllegalStateException(
-                    "Cannot get the saves directory"
+                    "无法获取 saves 目录"
             );
         }
 
@@ -229,7 +229,7 @@ public class BackupManager {
 
         if (worldPath == null) {
             throw new IllegalStateException(
-                    "The world Catalogue cannot be obtained"
+                    "无法获取世界目录"
             );
         }
 
@@ -322,7 +322,7 @@ public class BackupManager {
         } catch (IOException e) {
 
             AutoBackup.LOGGER.warn(
-                    "The number of backups cannot be counted: {}",
+                    "无法统计备份数量: {}",
                     e.getMessage()
             );
         }
@@ -391,14 +391,14 @@ public class BackupManager {
                 .equals(backupDir.normalize())) {
 
             throw new IOException(
-                    "Invalid backup name"
+                    "无效的备份名称"
             );
         }
 
         if (!Files.exists(backupPath)) {
 
             throw new IOException(
-                    "The backup does not exist: "
+                    "备份不存在: "
                             + backupName
             );
         }
@@ -406,7 +406,7 @@ public class BackupManager {
         if (!Files.isDirectory(backupPath)) {
 
             throw new IOException(
-                    "Backup is not a directory: "
+                    "备份不是目录: "
                             + backupName
             );
         }
@@ -416,7 +416,7 @@ public class BackupManager {
         );
 
         AutoBackup.LOGGER.info(
-                "The world backup has been deleted: {}",
+                "世界备份已删除: {}",
                 sanitizedName
         );
     }
@@ -466,7 +466,7 @@ public class BackupManager {
         if (!Files.isDirectory(serverPath)) {
 
             throw new IOException(
-                    "The server directory cannot be found: "
+                    "无法找到服务器目录: "
                             + serverPath
             );
         }
@@ -478,7 +478,7 @@ public class BackupManager {
         if (backupName.isEmpty()) {
 
             throw new IOException(
-                    "The name of the server backup cannot be empty"
+                    "服务器备份名称不能为空"
             );
         }
 
@@ -508,7 +508,7 @@ public class BackupManager {
                 .equals(serverBackupDir.normalize())) {
 
             throw new IOException(
-                    "Invalid server backup name"
+                    "无效的服务器备份名称"
             );
         }
 
@@ -516,14 +516,14 @@ public class BackupManager {
         if (Files.exists(backupPath)) {
 
             throw new IOException(
-                    "The server backup already exists: "
+                    "服务器备份已存在: "
                             + backupName
             );
         }
 
 
         AutoBackup.LOGGER.info(
-                "Start creating the server backup: {}",
+                "开始创建服务器备份: {}",
                 backupName
         );
 
@@ -546,7 +546,7 @@ public class BackupManager {
             } catch (IOException cleanupException) {
 
                 AutoBackup.LOGGER.warn(
-                        "Failed to delete the incomplete server backup: {}",
+                        "删除不完整服务器备份失败: {}",
                         cleanupException.getMessage()
                 );
             }
@@ -556,7 +556,7 @@ public class BackupManager {
 
 
         AutoBackup.LOGGER.info(
-                "The server backup has been created: {}",
+                "服务器备份已创建: {}",
                 backupName
         );
 
@@ -647,14 +647,14 @@ public class BackupManager {
                 .equals(serverBackupDir.normalize())) {
 
             throw new IOException(
-                    "Invalid server backup name"
+                    "无效的服务器备份名称"
             );
         }
 
         if (!Files.exists(backupPath)) {
 
             throw new IOException(
-                    "The server backup does not exist: "
+                    "服务器备份不存在: "
                             + backupName
             );
         }
@@ -662,7 +662,7 @@ public class BackupManager {
         if (!Files.isDirectory(backupPath)) {
 
             throw new IOException(
-                    "Server backup is not a directory: "
+                    "服务器备份不是目录: "
                             + backupName
             );
         }
@@ -672,7 +672,7 @@ public class BackupManager {
         );
 
         AutoBackup.LOGGER.info(
-                "The server backup has been deleted: {}",
+                "服务器备份已删除: {}",
                 sanitizedName
         );
     }
@@ -893,7 +893,7 @@ public class BackupManager {
                             throws IOException {
 
                         throw new IOException(
-                                "The file copy failed: "
+                                "复制文件失败: "
                                         + file
                                         + " - "
                                         + exc.getMessage(),
@@ -1010,7 +1010,7 @@ public class BackupManager {
                             throws IOException {
 
                         throw new IOException(
-                                "Failed to copy the server file: "
+                                "复制服务器文件失败: "
                                         + file
                                         + " - "
                                         + exc.getMessage(),

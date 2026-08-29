@@ -127,7 +127,7 @@ public class AutoBackup implements ModInitializer {
          */
         broadcast(
                 currentServer,
-                "The backup has begun."
+                "备份已开始"
         );
 
 
@@ -187,13 +187,13 @@ public class AutoBackup implements ModInitializer {
 
 
                 String message =
-                        "The backup has been completed："
+                        "服务器备份已完成备份文件夹大小："
                                 + backupName
-                                + " | Backup size："
+                                + " | 备份文件夹大小："
                                 + BackupManager.formatSize(
                                 backupSize
                         )
-                                + " | The size of the total backup folder："
+                                + " | 总备份文件夹大小："
                                 + BackupManager.formatSize(
                                 totalSize
                         );
@@ -223,7 +223,7 @@ public class AutoBackup implements ModInitializer {
 
                 broadcast(
                         currentServer,
-                        "Backup failed："
+                        "备份失败："
                                 + e.getMessage()
                 );
             }
@@ -251,7 +251,7 @@ public class AutoBackup implements ModInitializer {
          */
         broadcast(
                 currentServer,
-                "Server backup has begun"
+                "服务器备份已开始"
         );
 
 
@@ -310,13 +310,13 @@ public class AutoBackup implements ModInitializer {
 
 
                 String message =
-                        "The server backup has been completed："
+                        "服务器备份已完成："
                                 + backupName
-                                + " | Backup size："
+                                + " | 备份文件夹大小："
                                 + BackupManager.formatSize(
                                 backupSize
                         )
-                                + " | The size of the total backup folder："
+                                + " | 总备份文件夹大小："
                                 + BackupManager.formatSize(
                                 totalSize
                         );
@@ -339,14 +339,14 @@ public class AutoBackup implements ModInitializer {
             } catch (IOException e) {
 
                 LOGGER.error(
-                        "Automatic server backup failed.",
+                        "服务器自动备份失败。",
                         e
                 );
 
 
                 broadcast(
                         currentServer,
-                        "Server backup failed："
+                        "服务器备份失败："
                                 + e.getMessage()
                 );
             }

@@ -55,7 +55,7 @@ public class BackupCommand {
                 } catch (IOException e) {
 
                     AutoBackup.LOGGER.warn(
-                            "Failed to obtain the world backup list: {}",
+                            "获取世界备份列表失败: {}",
                             e.getMessage()
                     );
 
@@ -92,7 +92,7 @@ public class BackupCommand {
                 } catch (IOException e) {
 
                     AutoBackup.LOGGER.warn(
-                            "Failed to obtain the server backup list: {}",
+                            "获取服务器备份列表失败: {}",
                             e.getMessage()
                     );
 
@@ -295,7 +295,7 @@ public class BackupCommand {
 
             source.sendSuccess(
                     () -> Component.literal(
-                            "The backup has been created.: "
+                            "备份已创建: "
                                     + backupName
                     ),
                     false
@@ -307,13 +307,13 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "Backup creation failed: "
+                            "创建备份失败: "
                                     + e.getMessage()
                     )
             );
 
             AutoBackup.LOGGER.error(
-                    "The world backup creation failed",
+                    "创建世界备份失败",
                     e
             );
 
@@ -347,7 +347,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The backup name cannot be empty!"
+                            "备份名称不能为空!"
                     )
             );
 
@@ -363,7 +363,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The backup name is invalid!"
+                            "备份名称无效!"
                     )
             );
 
@@ -381,7 +381,7 @@ public class BackupCommand {
 
             source.sendSuccess(
                     () -> Component.literal(
-                            "The backup has been created: "
+                            "备份已创建: "
                                     + backupName
                     ),
                     false
@@ -393,13 +393,13 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "Failed to create a backup: "
+                            "创建备份失败: "
                                     + e.getMessage()
                     )
             );
 
             AutoBackup.LOGGER.error(
-                    "The backup for creating a custom world failed",
+                    "创建自定义世界备份失败",
                     e
             );
 
@@ -434,7 +434,7 @@ public class BackupCommand {
 
                 source.sendSuccess(
                         () -> Component.literal(
-                                "There is no backup in the current world"
+                                "当前世界没有备份。"
                         ),
                         false
                 );
@@ -447,7 +447,7 @@ public class BackupCommand {
                     new StringBuilder();
 
             message.append(
-                    "World Backup List:\n"
+                    "世界备份列表:\n"
             );
 
 
@@ -473,7 +473,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "List backup failures: "
+                            "列出备份失败: "
                                     + e.getMessage()
                     )
             );
@@ -508,7 +508,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The backup name cannot be empty!"
+                            "备份名称不能为空!"
                     )
             );
 
@@ -524,7 +524,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The backup name is invalid!"
+                            "备份名称无效!"
                     )
             );
 
@@ -541,7 +541,7 @@ public class BackupCommand {
 
             source.sendSuccess(
                     () -> Component.literal(
-                            "The backup has been deleted: "
+                            "备份已删除: "
                                     + sanitizedName
                     ),
                     false
@@ -553,7 +553,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "Failed to delete the backup: "
+                            "删除备份失败: "
                                     + e.getMessage()
                     )
             );
@@ -584,7 +584,7 @@ public class BackupCommand {
 
         source.sendSuccess(
                 () -> Component.literal(
-                        "The entire server is being backed up. Please wait a moment..."
+                        "正在备份整个服务器，请稍候..."
                 ),
                 false
         );
@@ -607,7 +607,7 @@ public class BackupCommand {
 
                 source.sendSuccess(
                         () -> Component.literal(
-                                "The entire server backup has been completed: "
+                                "整个服务器备份完成: "
                                         + backupName
                         ),
                         false
@@ -617,14 +617,14 @@ public class BackupCommand {
             } catch (IOException e) {
 
                 AutoBackup.LOGGER.error(
-                        "The entire server backup failed",
+                        "整个服务器备份失败",
                         e
                 );
 
 
                 source.sendFailure(
                         Component.literal(
-                                "The entire server backup failed: "
+                                "整个服务器备份失败: "
                                         + e.getMessage()
                         )
                 );
@@ -662,7 +662,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The name of the server backup cannot be empty!"
+                            "服务器备份名称不能为空!"
                     )
             );
 
@@ -678,7 +678,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The server backup name is invalid!"
+                            "服务器备份名称无效!"
                     )
             );
 
@@ -688,7 +688,7 @@ public class BackupCommand {
 
         source.sendSuccess(
                 () -> Component.literal(
-                        "A server backup is being created: "
+                        "正在创建服务器备份: "
                                 + sanitizedName
                 ),
                 false
@@ -708,7 +708,7 @@ public class BackupCommand {
 
                 source.sendSuccess(
                         () -> Component.literal(
-                                "The entire server backup has been completed: "
+                                "整个服务器备份完成: "
                                         + backupName
                         ),
                         false
@@ -718,14 +718,14 @@ public class BackupCommand {
             } catch (IOException e) {
 
                 AutoBackup.LOGGER.error(
-                        "The backup of the custom server failed",
+                        "自定义服务器备份失败",
                         e
                 );
 
 
                 source.sendFailure(
                         Component.literal(
-                                "The entire server backup failed: "
+                                "整个服务器备份失败: "
                                         + e.getMessage()
                         )
                 );
@@ -764,7 +764,7 @@ public class BackupCommand {
 
                 source.sendSuccess(
                         () -> Component.literal(
-                                "There is no server backup currently"
+                                "当前没有服务器备份。"
                         ),
                         false
                 );
@@ -777,7 +777,7 @@ public class BackupCommand {
                     new StringBuilder();
 
             message.append(
-                    "Server backup list:\n"
+                    "服务器备份列表:\n"
             );
 
 
@@ -804,7 +804,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "List server backup failure: "
+                            "列出服务器备份失败: "
                                     + e.getMessage()
                     )
             );
@@ -840,7 +840,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The name of the server backup cannot be empty!"
+                            "服务器备份名称不能为空!"
                     )
             );
 
@@ -856,7 +856,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "The server backup name is invalid!"
+                            "服务器备份名称无效!"
                     )
             );
 
@@ -874,7 +874,7 @@ public class BackupCommand {
 
             source.sendSuccess(
                     () -> Component.literal(
-                            "The server backup has been deleted: "
+                            "服务器备份已删除: "
                                     + sanitizedName
                     ),
                     false
@@ -887,7 +887,7 @@ public class BackupCommand {
 
             source.sendFailure(
                     Component.literal(
-                            "Failed to delete the server backup: "
+                            "删除服务器备份失败: "
                                     + e.getMessage()
                     )
             );
