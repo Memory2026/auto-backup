@@ -2,9 +2,9 @@ package com.xingci.autobackup;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
-import com.mojang.brigadier.builder.LiteralArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.SuggestionProvider;
 
@@ -19,913 +19,663 @@ import net.minecraft.server.permissions.PermissionLevel;
 
 public class BackupCommand {
 
-    // =========================================================
-    // 权限
-    // =========================================================
-
     private static final Permission BACKUP_PERMISSION =
             new Permission.HasCommandLevel(PermissionLevel.ALL);
 
-
-    // =========================================================
-    // 世界备份 Tab 补全
-    // =========================================================
-
-    /**
-     * /backup del <TAB>
-     *
-     * 获取当前世界的所有备份名称。
-     */
     private static final SuggestionProvider<CommandSourceStack> BACKUP_SUGGESTIONS =
-            (context, builder) -> {
+            (context, builder) -> suggestBackups(
+                    context,
+                    builder,
+                    false
+            );
 
-                MinecraftServer server =
-                        context.getSource().getServer();
-
-                try {
-
-                    List<String> backups =
-                            BackupManager.listBackups(server);
-
-                    return SharedSuggestionProvider.suggest(
-                            backups,
-                            builder
-                    );
-
-                } catch (IOException e) {
-
-                    AutoBackup.LOGGER.warn(
-                            "获取世界备份列表失败: {}",
-                            e.getMessage()
-                    );
-
-                    return builder.buildFuture();
-                }
-            };
-
-
-    // =========================================================
-    // 服务器备份 Tab 补全
-    // =========================================================
-
-    /**
-     * /backup server del <TAB>
-     *
-     * 获取所有整个服务器备份名称。
-     */
     private static final SuggestionProvider<CommandSourceStack> SERVER_BACKUP_SUGGESTIONS =
-            (context, builder) -> {
-
-                MinecraftServer server =
-                        context.getSource().getServer();
-
-                try {
-
-                    List<String> backups =
-                            BackupManager.listServerBackups(server);
-
-                    return SharedSuggestionProvider.suggest(
-                            backups,
-                            builder
-                    );
-
-                } catch (IOException e) {
-
-                    AutoBackup.LOGGER.warn(
-                            "获取服务器备份列表失败: {}",
-                            e.getMessage()
-                    );
-
-                    return builder.buildFuture();
-                }
-            };
-
-
-    // =========================================================
-    // 注册命令
-    // =========================================================
+            (context, builder) -> suggestBackups(
+                    context,
+                    builder,
+                    true
+            );
 
     public static void register() {
-
         CommandRegistrationCallback.EVENT.register(
-                (dispatcher, context, selection) -> {
-
-                    // =================================================
-                    // /backup
-                    // =================================================
-
-                    LiteralArgumentBuilder<CommandSourceStack> backupCommand =
-                            Commands.literal("backup")
-                                    .requires(source ->
-                                            source.permissions()
-                                                    .hasPermission(
-                                                            BACKUP_PERMISSION
-                                                    )
-                                    )
-                                    .executes(
-                                            BackupCommand::executeBackup
-                                    );
-
-
-                    // =================================================
-                    // /backup create <name>
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("create")
-                                    .then(
-                                            Commands.argument(
-                                                            "name",
-                                                            StringArgumentType.string()
-                                                    )
-                                                    .executes(
-                                                            BackupCommand::executeBackupCreate
-                                                    )
-                                    )
-                    );
-
-
-                    // =================================================
-                    // /backup list
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("list")
-                                    .executes(
-                                            BackupCommand::executeBackupList
-                                    )
-                    );
-
-
-                    // =================================================
-                    // /backup del <name>
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("del")
-                                    .then(
-                                            Commands.argument(
-                                                            "name",
-                                                            StringArgumentType.string()
-                                                    )
-
-                                                    // Tab 自动补全
-                                                    .suggests(
-                                                            BACKUP_SUGGESTIONS
-                                                    )
-
-                                                    .executes(
-                                                            BackupCommand::executeBackupDelete
-                                                    )
-                                    )
-                    );
-
-
-                    // =================================================
-                    // /backup server
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("server")
-                                    .executes(
-                                            BackupCommand::executeServerBackup
-                                    )
-                    );
-
-
-                    // =================================================
-                    // /backup server create <name>
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("server")
-                                    .then(
-                                            Commands.literal("create")
-                                                    .then(
-                                                            Commands.argument(
-                                                                            "name",
-                                                                            StringArgumentType.string()
-                                                                    )
-                                                                    .executes(
-                                                                            BackupCommand::executeServerBackupCreate
-                                                                    )
-                                                    )
-                                    )
-                    );
-
-
-                    // =================================================
-                    // /backup server list
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("server")
-                                    .then(
-                                            Commands.literal("list")
-                                                    .executes(
-                                                            BackupCommand::executeServerBackupList
-                                                    )
-                                    )
-                    );
-
-
-                    // =================================================
-                    // /backup server del <name>
-                    // =================================================
-
-                    backupCommand.then(
-                            Commands.literal("server")
-                                    .then(
-                                            Commands.literal("del")
-                                                    .then(
-                                                            Commands.argument(
-                                                                            "name",
-                                                                            StringArgumentType.string()
-                                                                    )
-
-                                                                    // Tab 自动补全
-                                                                    .suggests(
-                                                                            SERVER_BACKUP_SUGGESTIONS
-                                                                    )
-
-                                                                    .executes(
-                                                                            BackupCommand::executeServerBackupDelete
-                                                                    )
-                                                    )
-                                    )
-                    );
-
-
-                    // =================================================
-                    // 注册
-                    // =================================================
-
-                    dispatcher.register(
-                            backupCommand
-                    );
-                }
+                (dispatcher, context, selection) -> dispatcher.register(
+                        Commands.literal("backup")
+                                .requires(source ->
+                                        source.permissions()
+                                                .hasPermission(BACKUP_PERMISSION))
+                                .executes(BackupCommand::executeBackup)
+                                .then(Commands.literal("create")
+                                        .then(Commands.argument(
+                                                        "name",
+                                                        StringArgumentType.string())
+                                                .executes(BackupCommand::executeBackupCreate)))
+                                .then(Commands.literal("list")
+                                        .executes(BackupCommand::executeBackupList))
+                                .then(Commands.literal("del")
+                                        .then(Commands.literal("all")
+                                                .executes(BackupCommand::executeBackupDeleteAll))
+                                        .then(Commands.argument(
+                                                        "name",
+                                                        StringArgumentType.string())
+                                                .suggests(BACKUP_SUGGESTIONS)
+                                                .executes(BackupCommand::executeBackupDelete)))
+                                .then(Commands.literal("reload")
+                                        .then(Commands.argument(
+                                                        "name",
+                                                        StringArgumentType.string())
+                                                .suggests(BACKUP_SUGGESTIONS)
+                                                .executes(BackupCommand::executeBackupReload)))
+                                .then(Commands.literal("memory")
+                                        .executes(BackupCommand::executeBackupMemory)
+                                        .then(Commands.literal("list")
+                                                .executes(BackupCommand::executeBackupMemoryList)))
+                                .then(Commands.literal("gui")
+                                        .executes(BackupCommand::executeBackupGui))
+                                .then(Commands.literal("server")
+                                        .executes(BackupCommand::executeServerBackup)
+                                        .then(Commands.literal("create")
+                                                .then(Commands.argument(
+                                                                "name",
+                                                                StringArgumentType.string())
+                                                        .executes(BackupCommand::executeServerBackupCreate)))
+                                        .then(Commands.literal("list")
+                                                .executes(BackupCommand::executeServerBackupList))
+                                        .then(Commands.literal("del")
+                                                .then(Commands.literal("all")
+                                                        .executes(BackupCommand::executeServerBackupDeleteAll))
+                                                .then(Commands.argument(
+                                                                "name",
+                                                                StringArgumentType.string())
+                                                        .suggests(SERVER_BACKUP_SUGGESTIONS)
+                                                        .executes(BackupCommand::executeServerBackupDelete)))
+                                        .then(Commands.literal("reload")
+                                                .then(Commands.argument(
+                                                                "name",
+                                                                StringArgumentType.string())
+                                                        .suggests(SERVER_BACKUP_SUGGESTIONS)
+                                                        .executes(BackupCommand::executeServerBackupReload)))
+                                        .then(Commands.literal("memory")
+                                                .executes(BackupCommand::executeServerBackupMemory)
+                                                .then(Commands.literal("list")
+                                                        .executes(BackupCommand::executeServerBackupMemoryList))))
+                )
         );
     }
 
-
-    // =========================================================
-    // 世界备份
-    // =========================================================
-
-    /**
-     * /backup
-     *
-     * 自动创建一个世界备份。
-     */
     private static int executeBackup(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
         try {
-
-            String backupName =
-                    BackupManager.createBackup(
-                            server
+            BackupResult result =
+                    BackupManager.createBackupWithCleanup(
+                            context.getSource().getServer()
                     );
 
-            source.sendSuccess(
-                    () -> Component.literal(
-                            "备份已创建: "
-                                    + backupName
-                    ),
-                    false
+            sendSuccess(
+                    context,
+                    AutoBackup.formatWorldBackupMessage(result)
             );
-
             return 1;
 
         } catch (IOException e) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "创建备份失败: "
-                                    + e.getMessage()
-                    )
-            );
-
-            AutoBackup.LOGGER.error(
-                    "创建世界备份失败",
+            return fail(
+                    context,
+                    "创建世界备份失败: " + e.getMessage(),
                     e
             );
-
-            return 0;
         }
     }
 
-
-    /**
-     * /backup create <name>
-     *
-     * 创建指定名称的世界备份。
-     */
     private static int executeBackupCreate(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
         String name =
-                StringArgumentType.getString(
-                        context,
-                        "name"
-                );
-
-
-        if (name.trim().isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "备份名称不能为空!"
-                    )
-            );
-
-            return 0;
-        }
-
-
-        String sanitizedName =
-                sanitizeName(name);
-
-
-        if (sanitizedName.isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "备份名称无效!"
-                    )
-            );
-
-            return 0;
-        }
-
+                StringArgumentType.getString(context, "name");
 
         try {
-
-            String backupName =
-                    BackupManager.createBackup(
-                            server,
-                            sanitizedName
+            BackupResult result =
+                    BackupManager.createBackupWithCleanup(
+                            context.getSource().getServer(),
+                            name
                     );
 
-            source.sendSuccess(
-                    () -> Component.literal(
-                            "备份已创建: "
-                                    + backupName
-                    ),
-                    false
+            sendSuccess(
+                    context,
+                    AutoBackup.formatWorldBackupMessage(result)
             );
-
             return 1;
 
         } catch (IOException e) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "创建备份失败: "
-                                    + e.getMessage()
-                    )
-            );
-
-            AutoBackup.LOGGER.error(
-                    "创建自定义世界备份失败",
+            return fail(
+                    context,
+                    "创建世界备份失败: " + e.getMessage(),
                     e
             );
-
-            return 0;
         }
     }
 
-
-    /**
-     * /backup list
-     *
-     * 查看当前世界的所有备份。
-     */
     private static int executeBackupList(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
-        try {
-
-            List<String> backups =
-                    BackupManager.listBackups(
-                            server
-                    );
-
-
-            if (backups.isEmpty()) {
-
-                source.sendSuccess(
-                        () -> Component.literal(
-                                "当前世界没有备份。"
-                        ),
-                        false
-                );
-
-                return 1;
-            }
-
-
-            StringBuilder message =
-                    new StringBuilder();
-
-            message.append(
-                    "世界备份列表:\n"
-            );
-
-
-            for (String backup : backups) {
-
-                message
-                        .append("  - ")
-                        .append(backup)
-                        .append("\n");
-            }
-
-
-            source.sendSuccess(
-                    () -> Component.literal(
-                            message.toString()
-                    ),
-                    false
-            );
-
-            return 1;
-
-        } catch (IOException e) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "列出备份失败: "
-                                    + e.getMessage()
-                    )
-            );
-
-            return 0;
-        }
+        return sendNameList(
+                context,
+                false
+        );
     }
 
-
-    /**
-     * /backup del <name>
-     *
-     * 删除世界备份。
-     */
     private static int executeBackupDelete(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
-        String name =
-                StringArgumentType.getString(
-                        context,
-                        "name"
-                );
-
-
-        if (name.trim().isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "备份名称不能为空!"
-                    )
-            );
-
-            return 0;
-        }
-
-
-        String sanitizedName =
-                sanitizeName(name);
-
-
-        if (sanitizedName.isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "备份名称无效!"
-                    )
-            );
-
-            return 0;
-        }
-
-
         try {
+            String name =
+                    StringArgumentType.getString(context, "name");
 
             BackupManager.deleteBackup(
-                    server,
-                    sanitizedName
+                    context.getSource().getServer(),
+                    name
             );
 
-            source.sendSuccess(
-                    () -> Component.literal(
-                            "备份已删除: "
-                                    + sanitizedName
-                    ),
-                    false
+            sendSuccess(
+                    context,
+                    "世界备份已删除: " + name
             );
-
             return 1;
 
         } catch (IOException e) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "删除备份失败: "
-                                    + e.getMessage()
-                    )
+            return fail(
+                    context,
+                    "删除世界备份失败: " + e.getMessage(),
+                    e
             );
-
-            return 0;
         }
     }
 
+    private static int executeBackupDeleteAll(
+            CommandContext<CommandSourceStack> context) {
 
-    // =========================================================
-    // 整个服务器备份
-    // =========================================================
+        try {
+            BackupResult result =
+                    BackupManager.deleteAllBackupsKeepLatest(
+                            context.getSource().getServer()
+                    );
 
-    /**
-     * /backup server
-     *
-     * 自动备份整个 Minecraft 服务器。
-     */
+            sendSuccess(
+                    context,
+                    "世界备份清理完成 | "
+                            + result.deletedName()
+                            + " | 删除大小："
+                            + BackupManager.formatSize(result.deletedSize())
+                            + " | 当前总大小："
+                            + BackupManager.formatSize(result.totalSize())
+            );
+            return 1;
+
+        } catch (IOException e) {
+            return fail(
+                    context,
+                    "清理世界备份失败: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private static int executeBackupReload(
+            CommandContext<CommandSourceStack> context) {
+
+        String name =
+                StringArgumentType.getString(context, "name");
+
+        sendSuccess(
+                context,
+                "正在恢复世界备份，完成后服务器会自动重启: " + name
+        );
+
+        Thread.startVirtualThread(() -> {
+            try {
+                MinecraftServer server =
+                        context.getSource().getServer();
+
+                server.saveEverything(
+                        false,
+                        true,
+                        true
+                );
+                BackupManager.restoreBackup(
+                        server,
+                        name
+                );
+                server.halt(true);
+
+            } catch (IOException e) {
+                AutoBackup.LOGGER.error(
+                        "恢复世界备份失败",
+                        e
+                );
+                context.getSource().sendFailure(
+                        Component.literal(
+                                "恢复世界备份失败: " + e.getMessage()
+                        )
+                );
+            }
+        });
+
+        return 1;
+    }
+
+    private static int executeBackupMemory(
+            CommandContext<CommandSourceStack> context) {
+
+        try {
+            long size =
+                    BackupManager.getTotalBackupFolderSize(
+                            context.getSource().getServer()
+                    );
+
+            sendSuccess(
+                    context,
+                    "世界备份文件夹总大小："
+                            + BackupManager.formatSize(size)
+            );
+            return 1;
+
+        } catch (IOException e) {
+            return fail(
+                    context,
+                    "统计世界备份大小失败: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private static int executeBackupMemoryList(
+            CommandContext<CommandSourceStack> context) {
+
+        return sendMemoryList(
+                context,
+                false
+        );
+    }
+
+    private static int executeBackupGui(
+            CommandContext<CommandSourceStack> context) {
+
+        sendSuccess(
+                context,
+                "请在客户端聊天栏输入 !backup gui 打开图形化配置界面。"
+        );
+        return 1;
+    }
+
     private static int executeServerBackup(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
-
-        source.sendSuccess(
-                () -> Component.literal(
-                        "正在备份整个服务器，请稍候..."
-                ),
-                false
+        sendSuccess(
+                context,
+                "正在备份整个服务器，请稍候..."
         );
 
-
-        /*
-         * 使用虚拟线程进行文件复制。
-         *
-         * 防止大型服务器备份时卡住主线程。
-         */
         Thread.startVirtualThread(() -> {
-
             try {
-
-                String backupName =
-                        BackupManager.createServerBackup(
-                                server
+                BackupResult result =
+                        BackupManager.createServerBackupWithCleanup(
+                                context.getSource().getServer()
                         );
 
-
-                source.sendSuccess(
-                        () -> Component.literal(
-                                "整个服务器备份完成: "
-                                        + backupName
-                        ),
-                        false
+                sendSuccess(
+                        context,
+                        AutoBackup.formatServerBackupMessage(result)
                 );
 
-
             } catch (IOException e) {
-
                 AutoBackup.LOGGER.error(
                         "整个服务器备份失败",
                         e
                 );
-
-
-                source.sendFailure(
+                context.getSource().sendFailure(
                         Component.literal(
-                                "整个服务器备份失败: "
-                                        + e.getMessage()
+                                "整个服务器备份失败: " + e.getMessage()
                         )
                 );
             }
         });
 
-
         return 1;
     }
 
-
-    /**
-     * /backup server create <name>
-     *
-     * 使用自定义名称创建整个服务器备份。
-     */
     private static int executeServerBackupCreate(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
-
         String name =
-                StringArgumentType.getString(
-                        context,
-                        "name"
-                );
+                StringArgumentType.getString(context, "name");
 
-
-        if (name.trim().isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "服务器备份名称不能为空!"
-                    )
-            );
-
-            return 0;
-        }
-
-
-        String sanitizedName =
-                sanitizeName(name);
-
-
-        if (sanitizedName.isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "服务器备份名称无效!"
-                    )
-            );
-
-            return 0;
-        }
-
-
-        source.sendSuccess(
-                () -> Component.literal(
-                        "正在创建服务器备份: "
-                                + sanitizedName
-                ),
-                false
+        sendSuccess(
+                context,
+                "正在创建服务器备份: " + name
         );
 
-
         Thread.startVirtualThread(() -> {
-
             try {
-
-                String backupName =
-                        BackupManager.createServerBackup(
-                                server,
-                                sanitizedName
+                BackupResult result =
+                        BackupManager.createServerBackupWithCleanup(
+                                context.getSource().getServer(),
+                                name
                         );
 
-
-                source.sendSuccess(
-                        () -> Component.literal(
-                                "整个服务器备份完成: "
-                                        + backupName
-                        ),
-                        false
+                sendSuccess(
+                        context,
+                        AutoBackup.formatServerBackupMessage(result)
                 );
 
-
             } catch (IOException e) {
-
                 AutoBackup.LOGGER.error(
                         "自定义服务器备份失败",
                         e
                 );
-
-
-                source.sendFailure(
+                context.getSource().sendFailure(
                         Component.literal(
-                                "整个服务器备份失败: "
-                                        + e.getMessage()
+                                "整个服务器备份失败: " + e.getMessage()
                         )
                 );
             }
         });
 
+        return 1;
+    }
+
+    private static int executeServerBackupList(
+            CommandContext<CommandSourceStack> context) {
+
+        return sendNameList(
+                context,
+                true
+        );
+    }
+
+    private static int executeServerBackupDelete(
+            CommandContext<CommandSourceStack> context) {
+
+        try {
+            String name =
+                    StringArgumentType.getString(context, "name");
+
+            BackupManager.deleteServerBackup(
+                    context.getSource().getServer(),
+                    name
+            );
+
+            sendSuccess(
+                    context,
+                    "服务器备份已删除: " + name
+            );
+            return 1;
+
+        } catch (IOException e) {
+            return fail(
+                    context,
+                    "删除服务器备份失败: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private static int executeServerBackupDeleteAll(
+            CommandContext<CommandSourceStack> context) {
+
+        try {
+            BackupResult result =
+                    BackupManager.deleteAllServerBackupsKeepLatest(
+                            context.getSource().getServer()
+                    );
+
+            sendSuccess(
+                    context,
+                    "服务器备份清理完成 | "
+                            + result.deletedName()
+                            + " | 删除大小："
+                            + BackupManager.formatSize(result.deletedSize())
+                            + " | 当前总大小："
+                            + BackupManager.formatSize(result.totalSize())
+            );
+            return 1;
+
+        } catch (IOException e) {
+            return fail(
+                    context,
+                    "清理服务器备份失败: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private static int executeServerBackupReload(
+            CommandContext<CommandSourceStack> context) {
+
+        String name =
+                StringArgumentType.getString(context, "name");
+
+        sendSuccess(
+                context,
+                "正在恢复服务器备份，完成后服务器会自动重启: " + name
+        );
+
+        Thread.startVirtualThread(() -> {
+            try {
+                MinecraftServer server =
+                        context.getSource().getServer();
+
+                server.saveEverything(
+                        false,
+                        true,
+                        true
+                );
+                BackupManager.restoreServerBackup(
+                        server,
+                        name
+                );
+                server.halt(true);
+
+            } catch (IOException e) {
+                AutoBackup.LOGGER.error(
+                        "恢复服务器备份失败",
+                        e
+                );
+                context.getSource().sendFailure(
+                        Component.literal(
+                                "恢复服务器备份失败: " + e.getMessage()
+                        )
+                );
+            }
+        });
 
         return 1;
     }
 
-
-    /**
-     * /backup server list
-     *
-     * 查看所有整个服务器备份。
-     */
-    private static int executeServerBackupList(
+    private static int executeServerBackupMemory(
             CommandContext<CommandSourceStack> context) {
 
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
-
         try {
-
-            List<String> backups =
-                    BackupManager.listServerBackups(
-                            server
+            long size =
+                    BackupManager.getTotalServerBackupFolderSize(
+                            context.getSource().getServer()
                     );
 
+            sendSuccess(
+                    context,
+                    "服务器备份文件夹总大小："
+                            + BackupManager.formatSize(size)
+            );
+            return 1;
+
+        } catch (IOException e) {
+            return fail(
+                    context,
+                    "统计服务器备份大小失败: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private static int executeServerBackupMemoryList(
+            CommandContext<CommandSourceStack> context) {
+
+        return sendMemoryList(
+                context,
+                true
+        );
+    }
+
+    private static int sendNameList(
+            CommandContext<CommandSourceStack> context,
+            boolean serverBackups) {
+
+        try {
+            List<String> backups =
+                    serverBackups
+                            ? BackupManager.listServerBackups(
+                                    context.getSource().getServer())
+                            : BackupManager.listBackups(
+                                    context.getSource().getServer());
 
             if (backups.isEmpty()) {
-
-                source.sendSuccess(
-                        () -> Component.literal(
-                                "当前没有服务器备份。"
-                        ),
-                        false
+                sendSuccess(
+                        context,
+                        serverBackups
+                                ? "当前没有服务器备份。"
+                                : "当前世界没有备份。"
                 );
-
                 return 1;
             }
 
+            StringBuilder message =
+                    new StringBuilder(
+                            serverBackups
+                                    ? "服务器备份列表：\n"
+                                    : "世界备份列表：\n"
+                    );
+
+            backups.forEach(backup ->
+                    message.append("  - ")
+                            .append(backup)
+                            .append("\n"));
+
+            sendSuccess(
+                    context,
+                    message.toString()
+            );
+            return 1;
+
+        } catch (IOException e) {
+            return fail(
+                    context,
+                    "列出备份失败: " + e.getMessage(),
+                    e
+            );
+        }
+    }
+
+    private static int sendMemoryList(
+            CommandContext<CommandSourceStack> context,
+            boolean serverBackups) {
+
+        try {
+            List<BackupEntry> entries =
+                    serverBackups
+                            ? BackupManager.listServerBackupEntries(
+                                    context.getSource().getServer())
+                            : BackupManager.listBackupEntries(
+                                    context.getSource().getServer());
+
+            if (entries.isEmpty()) {
+                sendSuccess(
+                        context,
+                        serverBackups
+                                ? "服务器备份文件夹为空。"
+                                : "世界备份文件夹为空。"
+                );
+                return 1;
+            }
 
             StringBuilder message =
-                    new StringBuilder();
+                    new StringBuilder(
+                            serverBackups
+                                    ? "服务器备份文件大小列表（最新在最下面）：\n"
+                                    : "世界备份文件大小列表（最新在最下面）：\n"
+                    );
 
-            message.append(
-                    "服务器备份列表:\n"
-            );
-
-
-            for (String backup : backups) {
-
-                message
-                        .append("  - ")
-                        .append(backup)
+            for (BackupEntry entry : entries) {
+                message.append("  - ")
+                        .append(entry.name())
+                        .append(" | ")
+                        .append(BackupManager.formatSize(entry.size()))
                         .append("\n");
             }
 
-
-            source.sendSuccess(
-                    () -> Component.literal(
-                            message.toString()
-                    ),
-                    false
+            sendSuccess(
+                    context,
+                    message.toString()
             );
-
-
             return 1;
 
         } catch (IOException e) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "列出服务器备份失败: "
-                                    + e.getMessage()
-                    )
+            return fail(
+                    context,
+                    "统计备份列表失败: " + e.getMessage(),
+                    e
             );
-
-            return 0;
         }
     }
 
-
-    /**
-     * /backup server del <name>
-     *
-     * 删除整个服务器备份。
-     */
-    private static int executeServerBackupDelete(
-            CommandContext<CommandSourceStack> context) {
-
-        CommandSourceStack source =
-                context.getSource();
-
-        MinecraftServer server =
-                source.getServer();
-
-
-        String name =
-                StringArgumentType.getString(
-                        context,
-                        "name"
-                );
-
-
-        if (name.trim().isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "服务器备份名称不能为空!"
-                    )
-            );
-
-            return 0;
-        }
-
-
-        String sanitizedName =
-                sanitizeName(name);
-
-
-        if (sanitizedName.isEmpty()) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "服务器备份名称无效!"
-                    )
-            );
-
-            return 0;
-        }
-
+    private static CompletableFuture<com.mojang.brigadier.suggestion.Suggestions> suggestBackups(
+            CommandContext<CommandSourceStack> context,
+            com.mojang.brigadier.suggestion.SuggestionsBuilder builder,
+            boolean serverBackups) {
 
         try {
+            List<String> backups =
+                    serverBackups
+                            ? BackupManager.listServerBackups(
+                                    context.getSource().getServer())
+                            : BackupManager.listBackups(
+                                    context.getSource().getServer());
 
-            BackupManager.deleteServerBackup(
-                    server,
-                    sanitizedName
+            return SharedSuggestionProvider.suggest(
+                    backups,
+                    builder
             );
-
-
-            source.sendSuccess(
-                    () -> Component.literal(
-                            "服务器备份已删除: "
-                                    + sanitizedName
-                    ),
-                    false
-            );
-
-
-            return 1;
 
         } catch (IOException e) {
-
-            source.sendFailure(
-                    Component.literal(
-                            "删除服务器备份失败: "
-                                    + e.getMessage()
-                    )
+            AutoBackup.LOGGER.warn(
+                    "获取备份补全列表失败: {}",
+                    e.getMessage()
             );
-
-            return 0;
+            return builder.buildFuture();
         }
     }
 
+    private static void sendSuccess(
+            CommandContext<CommandSourceStack> context,
+            String message) {
 
-    // =========================================================
-    // 文件名安全处理
-    // =========================================================
+        context.getSource().sendSuccess(
+                () -> Component.literal(message),
+                false
+        );
+    }
 
-    /**
-     * 清理备份名称。
-     *
-     * 允许：
-     *
-     * A-Z
-     * a-z
-     * 0-9
-     * _
-     * -
-     * 中文
-     */
-    private static String sanitizeName(
-            String name) {
+    private static int fail(
+            CommandContext<CommandSourceStack> context,
+            String message,
+            Exception exception) {
 
-        if (name == null) {
-            return "";
-        }
+        context.getSource().sendFailure(
+                Component.literal(message)
+        );
 
+        AutoBackup.LOGGER.error(
+                message,
+                exception
+        );
 
-        return name
-                .trim()
-                .replaceAll(
-                        "[^a-zA-Z0-9_\\-\\u4e00-\\u9fa5]",
-                        "_"
-                );
+        return 0;
     }
 }

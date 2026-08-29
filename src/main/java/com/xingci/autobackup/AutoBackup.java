@@ -1,18 +1,20 @@
 package com.xingci.autobackup;
 
 import java.io.IOException;
-import java.nio.file.Path;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import net.fabricmc.api.ModInitializer;
+import net.fabricmc.fabric.api.message.v1.ServerMessageEvents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
 
 public class AutoBackup implements ModInitializer {
 
@@ -35,14 +37,21 @@ public class AutoBackup implements ModInitializer {
      */
     private static volatile MinecraftServer server;
 
+    private static ScheduledFuture<?> worldBackupTask;
+
+    private static ScheduledFuture<?> serverBackupTask;
+
 
     @Override
     public void onInitialize() {
+
+        BackupConfig.load();
 
         /*
          * 注册命令。
          */
         BackupCommand.register();
+        registerBangCommands();
 
         LOGGER.info(
                 "Auto Backup mod initialized!"
@@ -81,28 +90,83 @@ public class AutoBackup implements ModInitializer {
                 "Auto Backup scheduler started."
         );
 
+        reloadSchedules();
+    }
 
-        // =====================================================
-        // 每 5 分钟自动备份世界
-        // =====================================================
+    public static void reloadSchedules() {
+        MinecraftServer currentServer =
+                server;
 
-        SCHEDULER.scheduleAtFixedRate(
-                AutoBackup::automaticWorldBackup,
-                5,
-                5,
+        if (currentServer == null) {
+            return;
+        }
+
+        if (worldBackupTask != null) {
+            worldBackupTask.cancel(false);
+        }
+
+        if (serverBackupTask != null) {
+            serverBackupTask.cancel(false);
+        }
+
+        BackupConfig config =
+                BackupConfig.get();
+
+        worldBackupTask =
+                SCHEDULER.scheduleAtFixedRate(
+                        AutoBackup::automaticWorldBackup,
+                        config.getWorldIntervalMinutes(),
+                        config.getWorldIntervalMinutes(),
+                        TimeUnit.MINUTES
+                );
+
+        serverBackupTask =
+                SCHEDULER.scheduleAtFixedRate(
+                AutoBackup::automaticServerBackup,
+                config.getServerIntervalMinutes(),
+                config.getServerIntervalMinutes(),
                 TimeUnit.MINUTES
         );
+    }
 
+    private static void registerBangCommands() {
+        ServerMessageEvents.ALLOW_CHAT_MESSAGE.register(
+                (message, sender, boundChatType) -> {
 
-        // =====================================================
-        // 每 60 分钟自动备份整个服务器
-        // =====================================================
+                    String content =
+                            message.signedContent();
 
-        SCHEDULER.scheduleAtFixedRate(
-                AutoBackup::automaticServerBackup,
-                60,
-                60,
-                TimeUnit.MINUTES
+                    if (!content.startsWith("!backup")) {
+                        return true;
+                    }
+
+                    executeBangCommand(
+                            sender,
+                            content.substring(1)
+                    );
+
+                    return false;
+                }
+        );
+    }
+
+    private static void executeBangCommand(
+            ServerPlayer player,
+            String command) {
+
+        MinecraftServer currentServer =
+                player.level().getServer();
+
+        if (currentServer == null) {
+            return;
+        }
+
+        currentServer.execute(() ->
+                currentServer.getCommands()
+                        .performPrefixedCommand(
+                                player.createCommandSourceStack(),
+                                "/" + command
+                        )
         );
     }
 
@@ -148,8 +212,8 @@ public class AutoBackup implements ModInitializer {
                 /*
                  * 创建备份。
                  */
-                String backupName =
-                        BackupManager.createBackup(
+                BackupResult result =
+                        BackupManager.createBackupWithCleanup(
                                 currentServer
                         );
 
@@ -157,46 +221,8 @@ public class AutoBackup implements ModInitializer {
                 /*
                  * 获取刚刚创建的备份路径。
                  */
-                Path backupPath =
-                        BackupManager
-                                .getBackupDirectory(
-                                        currentServer
-                                )
-                                .resolve(
-                                        backupName
-                                );
-
-
-                /*
-                 * 获取本次备份大小。
-                 */
-                long backupSize =
-                        BackupManager.getBackupSize(
-                                backupPath
-                        );
-
-
-                /*
-                 * 获取整个世界备份文件夹大小。
-                 */
-                long totalSize =
-                        BackupManager
-                                .getTotalBackupFolderSize(
-                                        currentServer
-                                );
-
-
                 String message =
-                        "服务器备份已完成备份文件夹大小："
-                                + backupName
-                                + " | 备份文件夹大小："
-                                + BackupManager.formatSize(
-                                backupSize
-                        )
-                                + " | 总备份文件夹大小："
-                                + BackupManager.formatSize(
-                                totalSize
-                        );
+                        formatWorldBackupMessage(result);
 
 
                 /*
@@ -270,8 +296,8 @@ public class AutoBackup implements ModInitializer {
                 /*
                  * 创建整个服务器备份。
                  */
-                String backupName =
-                        BackupManager.createServerBackup(
+                BackupResult result =
+                        BackupManager.createServerBackupWithCleanup(
                                 currentServer
                         );
 
@@ -279,47 +305,8 @@ public class AutoBackup implements ModInitializer {
                 /*
                  * 获取本次服务器备份路径。
                  */
-                Path backupPath =
-                        BackupManager
-                                .getServerBackupDirectory(
-                                        currentServer
-                                )
-                                .resolve(
-                                        backupName
-                                );
-
-
-                /*
-                 * 获取本次备份大小。
-                 */
-                long backupSize =
-                        BackupManager.getBackupSize(
-                                backupPath
-                        );
-
-
-                /*
-                 * 获取整个 server-backups
-                 * 文件夹大小。
-                 */
-                long totalSize =
-                        BackupManager
-                                .getTotalServerBackupFolderSize(
-                                        currentServer
-                                );
-
-
                 String message =
-                        "服务器备份已完成："
-                                + backupName
-                                + " | 备份文件夹大小："
-                                + BackupManager.formatSize(
-                                backupSize
-                        )
-                                + " | 总备份文件夹大小："
-                                + BackupManager.formatSize(
-                                totalSize
-                        );
+                        formatServerBackupMessage(result);
 
 
                 /*
@@ -376,6 +363,46 @@ public class AutoBackup implements ModInitializer {
         });
     }
 
+    public static String formatWorldBackupMessage(
+            BackupResult result) {
+
+        return "世界备份已完成"
+                + " | 删除文件："
+                + deletedText(result)
+                + " | 世界已备份："
+                + result.backupName()
+                + " "
+                + BackupManager.formatSize(result.backupSize())
+                + " | 世界总备份文件夹大小："
+                + BackupManager.formatSize(result.totalSize());
+    }
+
+    public static String formatServerBackupMessage(
+            BackupResult result) {
+
+        return "服务器备份已完成"
+                + " | 删除服务器备份文件："
+                + deletedText(result)
+                + " | 服务器已备份："
+                + result.backupName()
+                + " "
+                + BackupManager.formatSize(result.backupSize())
+                + " | 总服务器备份文件夹大小："
+                + BackupManager.formatSize(result.totalSize());
+    }
+
+    private static String deletedText(
+            BackupResult result) {
+
+        if (!result.deletedBackup()) {
+            return "无";
+        }
+
+        return result.deletedName()
+                + " "
+                + BackupManager.formatSize(result.deletedSize());
+    }
+
 
     /**
      * 服务器停止。
@@ -392,7 +419,15 @@ public class AutoBackup implements ModInitializer {
         /*
          * 停止定时任务。
          */
-        SCHEDULER.shutdownNow();
+        if (worldBackupTask != null) {
+            worldBackupTask.cancel(false);
+            worldBackupTask = null;
+        }
+
+        if (serverBackupTask != null) {
+            serverBackupTask.cancel(false);
+            serverBackupTask = null;
+        }
     }
 
 

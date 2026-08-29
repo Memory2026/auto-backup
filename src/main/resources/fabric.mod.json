@@ -16,6 +16,9 @@
 	"entrypoints": {
 		"main": [
 			"com.xingci.autobackup.AutoBackup"
+		],
+		"client": [
+			"com.xingci.autobackup.AutoBackupClient"
 		]
 	},
 	"mixins": [

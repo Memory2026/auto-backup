@@ -1,6 +1,8 @@
 package com.xingci.autobackup;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -10,79 +12,146 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.stream.Stream;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
+import java.util.zip.ZipOutputStream;
 
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.world.level.storage.LevelResource;
 
 public class BackupManager {
 
-    // =========================================================
-    // 目录
-    // =========================================================
+    private static final String BACKUP_FOLDER_NAME =
+            "backups";
 
-    /**
-     * 世界备份：
-     *
-     * saves/backups/世界名/
-     */
-    private static final String BACKUP_FOLDER_NAME = "backups";
-
-    /**
-     * 整个服务器备份：
-     *
-     * 服务器根目录/server-backups/
-     */
     private static final String SERVER_BACKUP_FOLDER_NAME =
             "server-backups";
 
+    private static final int WORLD_BACKUP_LIMIT =
+            20;
 
-    // =========================================================
-    // 日期格式
-    // =========================================================
+    private static final int SERVER_BACKUP_LIMIT =
+            5;
 
     private static final DateTimeFormatter DATE_FORMATTER =
             DateTimeFormatter.ofPattern(
                     "yyyy-MM-dd-HHmmss"
             );
 
-
-    // =========================================================
-    // 世界备份
-    // =========================================================
-
-    /**
-     * 自动创建世界备份。
-     */
-    public static String createBackup(
+    public static BackupResult createBackupWithCleanup(
             MinecraftServer server) throws IOException {
 
-        String worldName =
-                getWorldName(server);
-
-        int backupCount =
-                getBackupCountForToday(
-                        server,
-                        worldName
-                ) + 1;
-
-        String backupName =
-                generateBackupName(
-                        worldName,
-                        backupCount
-                );
-
-        return createBackup(
+        return createBackupWithCleanup(
                 server,
-                backupName
+                null
         );
     }
 
+    public static BackupResult createBackupWithCleanup(
+            MinecraftServer server,
+            String customName) throws IOException {
 
-    /**
-     * 创建指定名称的世界备份。
-     */
+        Path backupDir =
+                getBackupDirectory(server);
+
+        Files.createDirectories(backupDir);
+
+        BackupResult deleted =
+                deleteOldestIfLimitReached(
+                        backupDir,
+                        WORLD_BACKUP_LIMIT
+                );
+
+        String backupName =
+                customName == null
+                        ? generateBackupName(
+                                getWorldName(server),
+                                getBackupCountForToday(server) + 1
+                        )
+                        : customName;
+
+        String createdName =
+                createBackup(
+                        server,
+                        backupName
+                );
+
+        Path backupPath =
+                backupDir.resolve(createdName);
+
+        long backupSize =
+                getBackupSize(backupPath);
+
+        return new BackupResult(
+                createdName,
+                backupSize,
+                deleted.deletedName(),
+                deleted.deletedSize(),
+                getDirectorySize(backupDir)
+        );
+    }
+
+    public static BackupResult createServerBackupWithCleanup(
+            MinecraftServer server) throws IOException {
+
+        return createServerBackupWithCleanup(
+                server,
+                null
+        );
+    }
+
+    public static BackupResult createServerBackupWithCleanup(
+            MinecraftServer server,
+            String customName) throws IOException {
+
+        Path backupDir =
+                getServerBackupDirectory(server);
+
+        Files.createDirectories(backupDir);
+
+        BackupResult deleted =
+                deleteOldestIfLimitReached(
+                        backupDir,
+                        SERVER_BACKUP_LIMIT
+                );
+
+        String backupName =
+                customName == null
+                        ? "autobackup-server-"
+                                + LocalDateTime.now().format(DATE_FORMATTER)
+                        : customName;
+
+        String createdName =
+                createServerBackup(
+                        server,
+                        backupName
+                );
+
+        Path backupPath =
+                backupDir.resolve(createdName);
+
+        long backupSize =
+                getBackupSize(backupPath);
+
+        return new BackupResult(
+                createdName,
+                backupSize,
+                deleted.deletedName(),
+                deleted.deletedSize(),
+                getDirectorySize(backupDir)
+        );
+    }
+
+    public static String createBackup(
+            MinecraftServer server) throws IOException {
+
+        return createBackupWithCleanup(server).backupName();
+    }
+
     public static String createBackup(
             MinecraftServer server,
             String customName) throws IOException {
@@ -93,109 +162,201 @@ public class BackupManager {
         Path backupDir =
                 getBackupDirectory(server);
 
-        Files.createDirectories(
-                backupDir
-        );
+        Files.createDirectories(backupDir);
 
-        String sanitizedName =
-                sanitizeName(customName);
-
-        if (sanitizedName.isEmpty()) {
-
-            throw new IOException(
-                    "备份名称不能为空"
-            );
-        }
+        String backupName =
+                withFormatSuffix(
+                        sanitizeName(customName),
+                        BackupConfig.get().getBackupFormat()
+                );
 
         Path backupPath =
-                backupDir
-                        .resolve(sanitizedName)
-                        .normalize();
-
-        if (!backupPath.getParent()
-                .equals(backupDir.normalize())) {
-
-            throw new IOException(
-                    "无效的备份名称"
-            );
-        }
+                validateBackupPath(
+                        backupDir,
+                        backupName,
+                        "备份"
+                );
 
         if (Files.exists(backupPath)) {
-
             throw new IOException(
-                    "备份已存在: "
-                            + sanitizedName
+                    "备份已存在: " + backupName
             );
         }
-
-        AutoBackup.LOGGER.info(
-                "开始创建世界备份: {}",
-                sanitizedName
-        );
 
         try {
-
-            copyDirectory(
+            copyPath(
                     worldPath,
-                    backupPath
+                    backupPath,
+                    BackupConfig.get().getBackupFormat(),
+                    null
             );
+            return backupName;
 
         } catch (IOException e) {
-
-            try {
-
-                if (Files.exists(backupPath)) {
-                    deleteDirectory(backupPath);
-                }
-
-            } catch (IOException cleanupException) {
-
-                AutoBackup.LOGGER.warn(
-                        "删除不完整世界备份失败: {}",
-                        cleanupException.getMessage()
-                );
-            }
-
+            deleteIfExists(backupPath);
             throw e;
         }
-
-        AutoBackup.LOGGER.info(
-                "世界备份已创建: {}",
-                sanitizedName
-        );
-
-        return sanitizedName;
     }
 
+    public static String createServerBackup(
+            MinecraftServer server) throws IOException {
 
-    /**
-     * 获取世界备份目录。
-     *
-     * 例如：
-     *
-     * saves/
-     * └── backups/
-     *     └── world/
-     */
+        return createServerBackupWithCleanup(server).backupName();
+    }
+
+    public static String createServerBackup(
+            MinecraftServer server,
+            String customName) throws IOException {
+
+        Path serverPath =
+                getServerPath();
+
+        Path backupDir =
+                getServerBackupDirectory(server);
+
+        Files.createDirectories(backupDir);
+
+        String backupName =
+                withFormatSuffix(
+                        sanitizeName(customName),
+                        BackupConfig.get().getBackupFormat()
+                );
+
+        Path backupPath =
+                validateBackupPath(
+                        backupDir,
+                        backupName,
+                        "服务器备份"
+                );
+
+        if (Files.exists(backupPath)) {
+            throw new IOException(
+                    "服务器备份已存在: " + backupName
+            );
+        }
+
+        try {
+            copyPath(
+                    serverPath,
+                    backupPath,
+                    BackupConfig.get().getBackupFormat(),
+                    getServerBackupDirectory(server)
+            );
+            return backupName;
+
+        } catch (IOException e) {
+            deleteIfExists(backupPath);
+            throw e;
+        }
+    }
+
+    public static List<String> listBackups(
+            MinecraftServer server) throws IOException {
+
+        return listBackupEntries(
+                getBackupDirectory(server)
+        ).stream()
+                .map(BackupEntry::name)
+                .toList();
+    }
+
+    public static List<String> listServerBackups(
+            MinecraftServer server) throws IOException {
+
+        return listBackupEntries(
+                getServerBackupDirectory(server)
+        ).stream()
+                .map(BackupEntry::name)
+                .toList();
+    }
+
+    public static List<BackupEntry> listBackupEntries(
+            MinecraftServer server) throws IOException {
+
+        return listBackupEntries(
+                getBackupDirectory(server)
+        );
+    }
+
+    public static List<BackupEntry> listServerBackupEntries(
+            MinecraftServer server) throws IOException {
+
+        return listBackupEntries(
+                getServerBackupDirectory(server)
+        );
+    }
+
+    public static void deleteBackup(
+            MinecraftServer server,
+            String backupName) throws IOException {
+
+        deleteNamedBackup(
+                getBackupDirectory(server),
+                backupName,
+                "备份"
+        );
+    }
+
+    public static void deleteServerBackup(
+            MinecraftServer server,
+            String backupName) throws IOException {
+
+        deleteNamedBackup(
+                getServerBackupDirectory(server),
+                backupName,
+                "服务器备份"
+        );
+    }
+
+    public static BackupResult deleteAllBackupsKeepLatest(
+            MinecraftServer server) throws IOException {
+
+        return deleteAllKeepLatest(
+                getBackupDirectory(server)
+        );
+    }
+
+    public static BackupResult deleteAllServerBackupsKeepLatest(
+            MinecraftServer server) throws IOException {
+
+        return deleteAllKeepLatest(
+                getServerBackupDirectory(server)
+        );
+    }
+
+    public static void restoreBackup(
+            MinecraftServer server,
+            String backupName) throws IOException {
+
+        restorePath(
+                resolveExistingBackup(
+                        getBackupDirectory(server),
+                        backupName,
+                        "备份"
+                ),
+                getWorldPath(server)
+        );
+    }
+
+    public static void restoreServerBackup(
+            MinecraftServer server,
+            String backupName) throws IOException {
+
+        restorePath(
+                resolveExistingBackup(
+                        getServerBackupDirectory(server),
+                        backupName,
+                        "服务器备份"
+                ),
+                getServerPath()
+        );
+    }
+
     public static Path getBackupDirectory(
             MinecraftServer server) {
 
-        String worldName =
-                getWorldName(server);
-
-        Path levelDataPath =
-                server.getWorldPath(
-                        LevelResource.LEVEL_DATA_FILE
-                );
-
         Path worldPath =
-                levelDataPath.getParent();
-
-        if (worldPath == null) {
-            throw new IllegalStateException(
-                    "无法获取世界目录"
-            );
-        }
+                getWorldPath(server);
 
         Path savesDir =
                 worldPath.getParent();
@@ -208,14 +369,553 @@ public class BackupManager {
 
         return savesDir
                 .resolve(BACKUP_FOLDER_NAME)
-                .resolve(sanitizeName(worldName))
+                .resolve(sanitizeName(getWorldName(server)))
                 .normalize();
     }
 
+    public static Path getServerBackupDirectory(
+            MinecraftServer server) {
 
-    /**
-     * 获取当前世界目录。
-     */
+        return getServerPath()
+                .resolve(SERVER_BACKUP_FOLDER_NAME)
+                .normalize();
+    }
+
+    public static long getBackupSize(
+            Path backupPath) throws IOException {
+
+        if (!Files.exists(backupPath)) {
+            return 0L;
+        }
+
+        if (Files.isRegularFile(backupPath)) {
+            return Files.size(backupPath);
+        }
+
+        return getDirectorySize(backupPath);
+    }
+
+    public static long getTotalBackupFolderSize(
+            MinecraftServer server) throws IOException {
+
+        return getDirectorySize(
+                getBackupDirectory(server)
+        );
+    }
+
+    public static long getTotalServerBackupFolderSize(
+            MinecraftServer server) throws IOException {
+
+        return getDirectorySize(
+                getServerBackupDirectory(server)
+        );
+    }
+
+    public static String formatSize(
+            long bytes) {
+
+        if (bytes < 1024) {
+            return bytes + " B";
+        }
+
+        double size =
+                bytes;
+
+        String[] units = {
+                "B",
+                "KB",
+                "MB",
+                "GB",
+                "TB"
+        };
+
+        int unitIndex = 0;
+
+        while (size >= 1024
+                && unitIndex < units.length - 1) {
+            size /= 1024;
+            unitIndex++;
+        }
+
+        return String.format(
+                Locale.ROOT,
+                "%.2f %s",
+                size,
+                units[unitIndex]
+        );
+    }
+
+    private static BackupResult deleteOldestIfLimitReached(
+            Path backupDir,
+            int limit) throws IOException {
+
+        List<Path> backups =
+                listBackupPaths(backupDir);
+
+        if (backups.size() < limit) {
+            return new BackupResult(
+                    "",
+                    0L,
+                    "",
+                    0L,
+                    getDirectorySize(backupDir)
+            );
+        }
+
+        Path oldest =
+                backups.getFirst();
+
+        long deletedSize =
+                getBackupSize(oldest);
+
+        String deletedName =
+                oldest.getFileName().toString();
+
+        deleteIfExists(oldest);
+
+        return new BackupResult(
+                "",
+                0L,
+                deletedName,
+                deletedSize,
+                getDirectorySize(backupDir)
+        );
+    }
+
+    private static BackupResult deleteAllKeepLatest(
+            Path backupDir) throws IOException {
+
+        List<Path> backups =
+                listBackupPaths(backupDir);
+
+        if (backups.size() <= 1) {
+            return new BackupResult(
+                    "",
+                    0L,
+                    "",
+                    0L,
+                    getDirectorySize(backupDir)
+            );
+        }
+
+        Path latest =
+                backups.getLast();
+
+        long deletedSize = 0L;
+        int deletedCount = 0;
+
+        for (Path backup : backups) {
+            if (backup.equals(latest)) {
+                continue;
+            }
+
+            deletedSize += getBackupSize(backup);
+            deleteIfExists(backup);
+            deletedCount++;
+        }
+
+        return new BackupResult(
+                "",
+                0L,
+                "共删除 " + deletedCount + " 个备份，已保留 "
+                        + latest.getFileName(),
+                deletedSize,
+                getDirectorySize(backupDir)
+        );
+    }
+
+    private static List<BackupEntry> listBackupEntries(
+            Path backupDir) throws IOException {
+
+        List<BackupEntry> entries =
+                new ArrayList<>();
+
+        for (Path backup : listBackupPaths(backupDir)) {
+            entries.add(
+                    new BackupEntry(
+                            backup.getFileName().toString(),
+                            getBackupSize(backup)
+                    )
+            );
+        }
+
+        return entries;
+    }
+
+    private static List<Path> listBackupPaths(
+            Path backupDir) throws IOException {
+
+        List<Path> backups =
+                new ArrayList<>();
+
+        if (!Files.exists(backupDir)) {
+            return backups;
+        }
+
+        try (Stream<Path> stream =
+                     Files.list(backupDir)) {
+
+            stream
+                    .filter(path ->
+                            Files.isDirectory(path)
+                                    || path.toString().endsWith(".zip"))
+                    .sorted(Comparator.comparing(path -> {
+                        try {
+                            return Files.getLastModifiedTime(path);
+                        } catch (IOException e) {
+                            return null;
+                        }
+                    }, Comparator.nullsLast(Comparator.naturalOrder())))
+                    .forEach(backups::add);
+        }
+
+        return backups;
+    }
+
+    private static void deleteNamedBackup(
+            Path backupDir,
+            String backupName,
+            String typeName) throws IOException {
+
+        deleteIfExists(
+                resolveExistingBackup(
+                        backupDir,
+                        backupName,
+                        typeName
+                )
+        );
+    }
+
+    private static Path resolveExistingBackup(
+            Path backupDir,
+            String backupName,
+            String typeName) throws IOException {
+
+        String sanitizedName =
+                sanitizeNameAllowZip(backupName);
+
+        Path backupPath =
+                validateBackupPath(
+                        backupDir,
+                        sanitizedName,
+                        typeName
+                );
+
+        if (!Files.exists(backupPath)) {
+            throw new IOException(
+                    typeName + "不存在: " + sanitizedName
+            );
+        }
+
+        if (!Files.isDirectory(backupPath)
+                && !backupPath.toString().endsWith(".zip")) {
+            throw new IOException(
+                    typeName + "格式无效: " + sanitizedName
+            );
+        }
+
+        return backupPath;
+    }
+
+    private static Path validateBackupPath(
+            Path backupDir,
+            String backupName,
+            String typeName) throws IOException {
+
+        if (backupName == null
+                || backupName.isBlank()) {
+            throw new IOException(
+                    typeName + "名称不能为空"
+            );
+        }
+
+        Path normalizedBackupDir =
+                backupDir.normalize();
+
+        Path backupPath =
+                normalizedBackupDir
+                        .resolve(backupName)
+                        .normalize();
+
+        if (!backupPath.getParent()
+                .equals(normalizedBackupDir)) {
+            throw new IOException(
+                    "无效的" + typeName + "名称"
+            );
+        }
+
+        return backupPath;
+    }
+
+    private static void restorePath(
+            Path backupPath,
+            Path targetPath) throws IOException {
+
+        Path tempRestore =
+                targetPath.resolveSibling(
+                        targetPath.getFileName()
+                                + "-autobackup-restore-tmp"
+                );
+
+        deleteIfExists(tempRestore);
+
+        if (Files.isDirectory(backupPath)) {
+            copyDirectory(
+                    backupPath,
+                    tempRestore,
+                    null
+            );
+        } else {
+            unzip(
+                    backupPath,
+                    tempRestore
+            );
+        }
+
+        deleteIfExists(targetPath);
+        Files.move(
+                tempRestore,
+                targetPath,
+                StandardCopyOption.REPLACE_EXISTING
+        );
+    }
+
+    private static void copyPath(
+            Path source,
+            Path target,
+            BackupFormat format,
+            Path skippedDirectory) throws IOException {
+
+        if (format == BackupFormat.ZIP) {
+            zipDirectory(
+                    source,
+                    target,
+                    skippedDirectory
+            );
+        } else {
+            copyDirectory(
+                    source,
+                    target,
+                    skippedDirectory
+            );
+        }
+    }
+
+    private static void copyDirectory(
+            Path source,
+            Path target,
+            Path skippedDirectory) throws IOException {
+
+        Files.walkFileTree(
+                source,
+                new SimpleFileVisitor<>() {
+
+                    @Override
+                    public FileVisitResult preVisitDirectory(
+                            Path directory,
+                            BasicFileAttributes attributes)
+                            throws IOException {
+
+                        if (shouldSkip(directory, skippedDirectory)) {
+                            return FileVisitResult.SKIP_SUBTREE;
+                        }
+
+                        Files.createDirectories(
+                                target.resolve(
+                                        source.relativize(directory)
+                                )
+                        );
+
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult visitFile(
+                            Path file,
+                            BasicFileAttributes attributes)
+                            throws IOException {
+
+                        if (isLockFile(file.getFileName().toString())) {
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        Files.copy(
+                                file,
+                                target.resolve(source.relativize(file)),
+                                StandardCopyOption.REPLACE_EXISTING
+                        );
+
+                        return FileVisitResult.CONTINUE;
+                    }
+                }
+        );
+    }
+
+    private static void zipDirectory(
+            Path source,
+            Path zipPath,
+            Path skippedDirectory) throws IOException {
+
+        try (OutputStream outputStream =
+                     Files.newOutputStream(zipPath);
+             ZipOutputStream zipOutputStream =
+                     new ZipOutputStream(outputStream)) {
+
+            Files.walkFileTree(
+                    source,
+                    new SimpleFileVisitor<>() {
+
+                        @Override
+                        public FileVisitResult preVisitDirectory(
+                                Path directory,
+                                BasicFileAttributes attributes)
+                                throws IOException {
+
+                            if (shouldSkip(directory, skippedDirectory)) {
+                                return FileVisitResult.SKIP_SUBTREE;
+                            }
+
+                            return FileVisitResult.CONTINUE;
+                        }
+
+                        @Override
+                        public FileVisitResult visitFile(
+                                Path file,
+                                BasicFileAttributes attributes)
+                                throws IOException {
+
+                            if (isLockFile(file.getFileName().toString())) {
+                                return FileVisitResult.CONTINUE;
+                            }
+
+                            ZipEntry entry =
+                                    new ZipEntry(
+                                            source.relativize(file)
+                                                    .toString()
+                                                    .replace('\\', '/')
+                                    );
+
+                            zipOutputStream.putNextEntry(entry);
+                            Files.copy(file, zipOutputStream);
+                            zipOutputStream.closeEntry();
+
+                            return FileVisitResult.CONTINUE;
+                        }
+                    }
+            );
+        }
+    }
+
+    private static void unzip(
+            Path zipPath,
+            Path target) throws IOException {
+
+        Files.createDirectories(target);
+
+        try (InputStream inputStream =
+                     Files.newInputStream(zipPath);
+             ZipInputStream zipInputStream =
+                     new ZipInputStream(inputStream)) {
+
+            ZipEntry entry;
+
+            while ((entry = zipInputStream.getNextEntry()) != null) {
+                Path outputPath =
+                        target.resolve(entry.getName())
+                                .normalize();
+
+                if (!outputPath.startsWith(target)) {
+                    throw new IOException(
+                            "zip 文件包含不安全路径: " + entry.getName()
+                    );
+                }
+
+                if (entry.isDirectory()) {
+                    Files.createDirectories(outputPath);
+                } else {
+                    Files.createDirectories(outputPath.getParent());
+                    Files.copy(
+                            zipInputStream,
+                            outputPath,
+                            StandardCopyOption.REPLACE_EXISTING
+                    );
+                }
+
+                zipInputStream.closeEntry();
+            }
+        }
+    }
+
+    private static long getDirectorySize(
+            Path directory) throws IOException {
+
+        if (!Files.exists(directory)) {
+            return 0L;
+        }
+
+        if (Files.isRegularFile(directory)) {
+            return Files.size(directory);
+        }
+
+        try (Stream<Path> stream =
+                     Files.walk(directory)) {
+
+            return stream
+                    .filter(Files::isRegularFile)
+                    .mapToLong(path -> {
+                        try {
+                            return Files.size(path);
+                        } catch (IOException e) {
+                            return 0L;
+                        }
+                    })
+                    .sum();
+        }
+    }
+
+    private static void deleteIfExists(
+            Path path) throws IOException {
+
+        if (!Files.exists(path)) {
+            return;
+        }
+
+        if (Files.isRegularFile(path)) {
+            Files.delete(path);
+            return;
+        }
+
+        Files.walkFileTree(
+                path,
+                new SimpleFileVisitor<>() {
+
+                    @Override
+                    public FileVisitResult visitFile(
+                            Path file,
+                            BasicFileAttributes attributes)
+                            throws IOException {
+
+                        Files.delete(file);
+                        return FileVisitResult.CONTINUE;
+                    }
+
+                    @Override
+                    public FileVisitResult postVisitDirectory(
+                            Path directory,
+                            IOException exception)
+                            throws IOException {
+
+                        if (exception != null) {
+                            throw exception;
+                        }
+
+                        Files.delete(directory);
+                        return FileVisitResult.CONTINUE;
+                    }
+                }
+        );
+    }
+
     private static Path getWorldPath(
             MinecraftServer server) {
 
@@ -236,24 +936,19 @@ public class BackupManager {
         return worldPath;
     }
 
+    private static Path getServerPath() {
+        return Path.of("")
+                .toAbsolutePath()
+                .normalize();
+    }
 
-    /**
-     * 获取世界名称。
-     */
     private static String getWorldName(
             MinecraftServer server) {
 
-        Path levelDataPath =
-                server.getWorldPath(
-                        LevelResource.LEVEL_DATA_FILE
-                );
-
         Path worldPath =
-                levelDataPath.getParent();
+                getWorldPath(server);
 
-        if (worldPath == null
-                || worldPath.getFileName() == null) {
-
+        if (worldPath.getFileName() == null) {
             return "world";
         }
 
@@ -262,815 +957,79 @@ public class BackupManager {
                 .toString();
     }
 
-
-    /**
-     * 自动世界备份名称：
-     *
-     * world_2026-08-28-171500_1
-     */
     private static String generateBackupName(
             String worldName,
             int count) {
 
-        String date =
-                LocalDateTime.now()
-                        .format(DATE_FORMATTER);
-
-        return worldName
+        return sanitizeName(worldName)
                 + "_"
-                + date
+                + LocalDateTime.now().format(DATE_FORMATTER)
                 + "_"
                 + count;
     }
 
-
-    /**
-     * 获取今天的备份数量。
-     */
     private static int getBackupCountForToday(
-            MinecraftServer server,
-            String worldName) {
+            MinecraftServer server) {
 
-        Path backupDir =
-                getBackupDirectory(server);
-
-        if (!Files.exists(backupDir)) {
-            return 0;
-        }
-
-        int count = 0;
-
-        try (Stream<Path> stream =
-                     Files.list(backupDir)) {
-
+        try {
             String prefix =
-                    worldName
+                    sanitizeName(getWorldName(server))
                             + "_"
                             + LocalDateTime.now()
-                            .format(DATE_FORMATTER)
-                            .substring(0, 10);
+                                    .format(DATE_FORMATTER)
+                                    .substring(0, 10);
 
-            count = (int) stream
-                    .filter(Files::isDirectory)
-                    .map(path ->
-                            path.getFileName()
-                                    .toString())
-                    .filter(name ->
-                            name.startsWith(prefix))
+            return (int) listBackups(server)
+                    .stream()
+                    .filter(name -> name.startsWith(prefix))
                     .count();
 
         } catch (IOException e) {
-
-            AutoBackup.LOGGER.warn(
-                    "无法统计备份数量: {}",
-                    e.getMessage()
-            );
+            return 0;
         }
-
-        return count;
     }
 
+    private static boolean shouldSkip(
+            Path directory,
+            Path skippedDirectory) {
 
-    /**
-     * 列出世界备份。
-     *
-     * /backup list
-     */
-    public static List<String> listBackups(
-            MinecraftServer server) throws IOException {
-
-        Path backupDir =
-                getBackupDirectory(server);
-
-        List<String> backups =
-                new ArrayList<>();
-
-        if (!Files.exists(backupDir)) {
-            return backups;
-        }
-
-        try (Stream<Path> stream =
-                     Files.list(backupDir)) {
-
-            stream
-                    .filter(Files::isDirectory)
-                    .map(path ->
-                            path.getFileName()
-                                    .toString())
-                    .sorted()
-                    .forEach(
-                            backups::add
-                    );
-        }
-
-        return backups;
-    }
-
-
-    /**
-     * 删除世界备份。
-     *
-     * /backup del <name>
-     */
-    public static void deleteBackup(
-            MinecraftServer server,
-            String backupName) throws IOException {
-
-        Path backupDir =
-                getBackupDirectory(server);
-
-        String sanitizedName =
-                sanitizeName(backupName);
-
-        Path backupPath =
-                backupDir
-                        .resolve(sanitizedName)
-                        .normalize();
-
-        if (!backupPath.getParent()
-                .equals(backupDir.normalize())) {
-
-            throw new IOException(
-                    "无效的备份名称"
-            );
-        }
-
-        if (!Files.exists(backupPath)) {
-
-            throw new IOException(
-                    "备份不存在: "
-                            + backupName
-            );
-        }
-
-        if (!Files.isDirectory(backupPath)) {
-
-            throw new IOException(
-                    "备份不是目录: "
-                            + backupName
-            );
-        }
-
-        deleteDirectory(
-                backupPath
-        );
-
-        AutoBackup.LOGGER.info(
-                "世界备份已删除: {}",
-                sanitizedName
-        );
-    }
-
-
-    // =========================================================
-    // 服务器备份
-    // =========================================================
-
-    /**
-     * 自动创建整个服务器备份。
-     *
-     * 名称：
-     *
-     * autobackup-server-2026-08-28-180000
-     */
-    public static String createServerBackup(
-            MinecraftServer server) throws IOException {
-
-        String backupName =
-                "autobackup-server-"
-                        + LocalDateTime.now()
-                        .format(DATE_FORMATTER);
-
-        return createServerBackup(
-                server,
-                backupName
-        );
-    }
-
-
-    /**
-     * 创建指定名称的整个服务器备份。
-     */
-    public static String createServerBackup(
-            MinecraftServer server,
-            String customName) throws IOException {
-
-        /*
-         * Minecraft 服务端根目录。
-         */
-        Path serverPath =
-                Path.of("")
-                        .toAbsolutePath()
-                        .normalize();
-
-        if (!Files.isDirectory(serverPath)) {
-
-            throw new IOException(
-                    "无法找到服务器目录: "
-                            + serverPath
-            );
-        }
-
-
-        String backupName =
-                sanitizeName(customName);
-
-        if (backupName.isEmpty()) {
-
-            throw new IOException(
-                    "服务器备份名称不能为空"
-            );
-        }
-
-
-        /*
-         * 服务器备份目录：
-         *
-         * 服务器根目录/server-backups/
-         */
-        Path serverBackupDir =
-                getServerBackupDirectory(
-                        server
+        return skippedDirectory != null
+                && directory.normalize().startsWith(
+                        skippedDirectory.normalize()
                 );
+    }
 
-        Files.createDirectories(
-                serverBackupDir
-        );
+    private static String withFormatSuffix(
+            String backupName,
+            BackupFormat format) {
 
-
-        Path backupPath =
-                serverBackupDir
-                        .resolve(backupName)
-                        .normalize();
-
-
-        if (!backupPath.getParent()
-                .equals(serverBackupDir.normalize())) {
-
-            throw new IOException(
-                    "无效的服务器备份名称"
-            );
+        if (backupName == null
+                || backupName.isBlank()) {
+            return "";
         }
 
-
-        if (Files.exists(backupPath)) {
-
-            throw new IOException(
-                    "服务器备份已存在: "
-                            + backupName
-            );
+        if (format == BackupFormat.ZIP
+                && !backupName.endsWith(".zip")) {
+            return backupName + ".zip";
         }
-
-
-        AutoBackup.LOGGER.info(
-                "开始创建服务器备份: {}",
-                backupName
-        );
-
-
-        try {
-
-            copyServerDirectory(
-                    serverPath,
-                    backupPath
-            );
-
-        } catch (IOException e) {
-
-            try {
-
-                if (Files.exists(backupPath)) {
-                    deleteDirectory(backupPath);
-                }
-
-            } catch (IOException cleanupException) {
-
-                AutoBackup.LOGGER.warn(
-                        "删除不完整服务器备份失败: {}",
-                        cleanupException.getMessage()
-                );
-            }
-
-            throw e;
-        }
-
-
-        AutoBackup.LOGGER.info(
-                "服务器备份已创建: {}",
-                backupName
-        );
 
         return backupName;
     }
 
+    private static String sanitizeNameAllowZip(
+            String name) {
 
-    /**
-     * 获取服务器备份目录。
-     *
-     * 这里明确放在：
-     *
-     * 服务器根目录/server-backups/
-     */
-    public static Path getServerBackupDirectory(
-            MinecraftServer server) {
+        String sanitized =
+                sanitizeName(name);
 
-        Path serverPath =
-                Path.of("")
-                        .toAbsolutePath()
-                        .normalize();
+        if (name != null
+                && name.trim().endsWith(".zip")
+                && !sanitized.endsWith(".zip")) {
+            return sanitized + ".zip";
+        }
 
-        return serverPath
-                .resolve(
-                        SERVER_BACKUP_FOLDER_NAME
-                )
-                .normalize();
+        return sanitized;
     }
-
-
-    /**
-     * 列出服务器备份。
-     *
-     * /backup server list
-     */
-    public static List<String> listServerBackups(
-            MinecraftServer server) throws IOException {
-
-        Path serverBackupDir =
-                getServerBackupDirectory(server);
-
-        List<String> backups =
-                new ArrayList<>();
-
-        if (!Files.exists(serverBackupDir)) {
-            return backups;
-        }
-
-        try (Stream<Path> stream =
-                     Files.list(serverBackupDir)) {
-
-            stream
-                    .filter(Files::isDirectory)
-                    .map(path ->
-                            path.getFileName()
-                                    .toString())
-                    .sorted()
-                    .forEach(
-                            backups::add
-                    );
-        }
-
-        return backups;
-    }
-
-
-    /**
-     * 删除服务器备份。
-     *
-     * /backup server del <name>
-     */
-    public static void deleteServerBackup(
-            MinecraftServer server,
-            String backupName) throws IOException {
-
-        Path serverBackupDir =
-                getServerBackupDirectory(server);
-
-        String sanitizedName =
-                sanitizeName(backupName);
-
-        Path backupPath =
-                serverBackupDir
-                        .resolve(sanitizedName)
-                        .normalize();
-
-        if (!backupPath.getParent()
-                .equals(serverBackupDir.normalize())) {
-
-            throw new IOException(
-                    "无效的服务器备份名称"
-            );
-        }
-
-        if (!Files.exists(backupPath)) {
-
-            throw new IOException(
-                    "服务器备份不存在: "
-                            + backupName
-            );
-        }
-
-        if (!Files.isDirectory(backupPath)) {
-
-            throw new IOException(
-                    "服务器备份不是目录: "
-                            + backupName
-            );
-        }
-
-        deleteDirectory(
-                backupPath
-        );
-
-        AutoBackup.LOGGER.info(
-                "服务器备份已删除: {}",
-                sanitizedName
-        );
-    }
-
-
-    // =========================================================
-    // 获取备份大小
-    // =========================================================
-
-    /**
-     * 获取一个备份目录的大小。
-     *
-     * 单位：字节
-     */
-    public static long getBackupSize(
-            Path backupPath) throws IOException {
-
-        if (!Files.exists(backupPath)) {
-            return 0L;
-        }
-
-        if (Files.isRegularFile(backupPath)) {
-            return Files.size(backupPath);
-        }
-
-        try (Stream<Path> stream =
-                     Files.walk(backupPath)) {
-
-            return stream
-                    .filter(Files::isRegularFile)
-                    .mapToLong(path -> {
-
-                        try {
-                            return Files.size(path);
-                        } catch (IOException e) {
-                            return 0L;
-                        }
-
-                    })
-                    .sum();
-        }
-    }
-
-
-    /**
-     * 获取整个世界备份文件夹大小。
-     */
-    public static long getTotalBackupFolderSize(
-            MinecraftServer server) throws IOException {
-
-        return getDirectorySize(
-                getBackupDirectory(server)
-        );
-    }
-
-
-    /**
-     * 获取整个服务器备份文件夹大小。
-     */
-    public static long getTotalServerBackupFolderSize(
-            MinecraftServer server) throws IOException {
-
-        return getDirectorySize(
-                getServerBackupDirectory(server)
-        );
-    }
-
-
-    /**
-     * 获取目录大小。
-     */
-    private static long getDirectorySize(
-            Path directory) throws IOException {
-
-        if (!Files.exists(directory)) {
-            return 0L;
-        }
-
-        if (Files.isRegularFile(directory)) {
-            return Files.size(directory);
-        }
-
-        try (Stream<Path> stream =
-                     Files.walk(directory)) {
-
-            return stream
-                    .filter(Files::isRegularFile)
-                    .mapToLong(path -> {
-
-                        try {
-                            return Files.size(path);
-                        } catch (IOException e) {
-                            return 0L;
-                        }
-
-                    })
-                    .sum();
-        }
-    }
-
-
-    /**
-     * 格式化文件大小。
-     *
-     * 例如：
-     *
-     * 1024 -> 1.00 KB
-     * 1048576 -> 1.00 MB
-     * 1073741824 -> 1.00 GB
-     */
-    public static String formatSize(
-            long bytes) {
-
-        if (bytes < 1024) {
-
-            return bytes + " B";
-        }
-
-        double size =
-                bytes;
-
-        String[] units = {
-                "B",
-                "KB",
-                "MB",
-                "GB",
-                "TB"
-        };
-
-        int unitIndex = 0;
-
-        while (size >= 1024
-                && unitIndex < units.length - 1) {
-
-            size /= 1024;
-            unitIndex++;
-        }
-
-        return String.format(
-                "%.2f %s",
-                size,
-                units[unitIndex]
-        );
-    }
-
-
-    // =========================================================
-    // 文件复制
-    // =========================================================
-
-    /**
-     * 复制世界目录。
-     */
-    private static void copyDirectory(
-            Path source,
-            Path target) throws IOException {
-
-        Files.walkFileTree(
-                source,
-                new SimpleFileVisitor<>() {
-
-                    @Override
-                    public FileVisitResult preVisitDirectory(
-                            Path dir,
-                            BasicFileAttributes attrs)
-                            throws IOException {
-
-                        Path targetDir =
-                                target.resolve(
-                                        source.relativize(
-                                                dir
-                                        )
-                                );
-
-                        Files.createDirectories(
-                                targetDir
-                        );
-
-                        return FileVisitResult.CONTINUE;
-                    }
-
-
-                    @Override
-                    public FileVisitResult visitFile(
-                            Path file,
-                            BasicFileAttributes attrs)
-                            throws IOException {
-
-                        String fileName =
-                                file.getFileName()
-                                        .toString();
-
-                        if (isLockFile(fileName)) {
-                            return FileVisitResult.CONTINUE;
-                        }
-
-                        Path targetFile =
-                                target.resolve(
-                                        source.relativize(
-                                                file
-                                        )
-                                );
-
-                        Files.copy(
-                                file,
-                                targetFile,
-                                StandardCopyOption.REPLACE_EXISTING
-                        );
-
-                        return FileVisitResult.CONTINUE;
-                    }
-
-
-                    @Override
-                    public FileVisitResult visitFileFailed(
-                            Path file,
-                            IOException exc)
-                            throws IOException {
-
-                        throw new IOException(
-                                "复制文件失败: "
-                                        + file
-                                        + " - "
-                                        + exc.getMessage(),
-                                exc
-                        );
-                    }
-                }
-        );
-    }
-
-
-    /**
-     * 复制整个服务器。
-     *
-     * 特别注意：
-     *
-     * server-backups/
-     * 不能再次复制进去。
-     *
-     * 否则会出现：
-     *
-     * server-backups/
-     * └── backup1/
-     *     └── server-backups/
-     *         └── backup1/
-     *             ...
-     */
-    private static void copyServerDirectory(
-            Path source,
-            Path target) throws IOException {
-
-        Path serverBackupDir =
-                source
-                        .resolve(
-                                SERVER_BACKUP_FOLDER_NAME
-                        )
-                        .normalize();
-
-        Files.walkFileTree(
-                source,
-                new SimpleFileVisitor<>() {
-
-                    @Override
-                    public FileVisitResult preVisitDirectory(
-                            Path dir,
-                            BasicFileAttributes attrs)
-                            throws IOException {
-
-                        Path normalizedDir =
-                                dir.normalize();
-
-                        /*
-                         * 不复制 server-backups。
-                         */
-                        if (normalizedDir.equals(
-                                serverBackupDir)) {
-
-                            return FileVisitResult.SKIP_SUBTREE;
-                        }
-
-                        Path targetDir =
-                                target.resolve(
-                                        source.relativize(
-                                                dir
-                                        )
-                                );
-
-                        Files.createDirectories(
-                                targetDir
-                        );
-
-                        return FileVisitResult.CONTINUE;
-                    }
-
-
-                    @Override
-                    public FileVisitResult visitFile(
-                            Path file,
-                            BasicFileAttributes attrs)
-                            throws IOException {
-
-                        String fileName =
-                                file.getFileName()
-                                        .toString();
-
-                        /*
-                         * 跳过锁文件。
-                         */
-                        if (isLockFile(fileName)) {
-                            return FileVisitResult.CONTINUE;
-                        }
-
-                        Path targetFile =
-                                target.resolve(
-                                        source.relativize(
-                                                file
-                                        )
-                                );
-
-                        Files.copy(
-                                file,
-                                targetFile,
-                                StandardCopyOption.REPLACE_EXISTING
-                        );
-
-                        return FileVisitResult.CONTINUE;
-                    }
-
-
-                    @Override
-                    public FileVisitResult visitFileFailed(
-                            Path file,
-                            IOException exc)
-                            throws IOException {
-
-                        throw new IOException(
-                                "复制服务器文件失败: "
-                                        + file
-                                        + " - "
-                                        + exc.getMessage(),
-                                exc
-                        );
-                    }
-                }
-        );
-    }
-
-
-    // =========================================================
-    // 删除目录
-    // =========================================================
-
-    private static void deleteDirectory(
-            Path directory) throws IOException {
-
-        if (!Files.exists(directory)) {
-            return;
-        }
-
-        Files.walkFileTree(
-                directory,
-                new SimpleFileVisitor<>() {
-
-                    @Override
-                    public FileVisitResult visitFile(
-                            Path file,
-                            BasicFileAttributes attrs)
-                            throws IOException {
-
-                        Files.delete(file);
-
-                        return FileVisitResult.CONTINUE;
-                    }
-
-
-                    @Override
-                    public FileVisitResult postVisitDirectory(
-                            Path dir,
-                            IOException exc)
-                            throws IOException {
-
-                        if (exc != null) {
-                            throw exc;
-                        }
-
-                        Files.delete(dir);
-
-                        return FileVisitResult.CONTINUE;
-                    }
-                }
-        );
-    }
-
-
-    // =========================================================
-    // 文件名
-    // =========================================================
 
     private static String sanitizeName(
             String name) {
@@ -1082,11 +1041,10 @@ public class BackupManager {
         return name
                 .trim()
                 .replaceAll(
-                        "[^a-zA-Z0-9_\\-\\u4e00-\\u9fa5]",
+                        "[^a-zA-Z0-9_\\-\\.\\u4e00-\\u9fa5]",
                         "_"
                 );
     }
-
 
     private static boolean isLockFile(
             String fileName) {
