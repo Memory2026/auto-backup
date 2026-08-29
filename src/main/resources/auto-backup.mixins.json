@@ -5,6 +5,10 @@
 	"mixins": [
 		"ExampleMixin"
 	],
+	"client": [
+		"CommandSuggestionsMixin",
+		"CommandSuggestionsListMixin"
+	],
 	"injectors": {
 		"defaultRequire": 1
 	},

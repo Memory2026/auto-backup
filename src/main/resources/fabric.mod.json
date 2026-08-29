@@ -19,6 +19,9 @@
 		],
 		"client": [
 			"com.xingci.autobackup.AutoBackupClient"
+		],
+		"modmenu": [
+			"com.xingci.autobackup.AutoBackupModMenu"
 		]
 	},
 	"mixins": [
@@ -29,5 +32,8 @@
 		"minecraft": "~26.2",
 		"java": ">=25",
 		"fabric-api": "*"
+	},
+	"suggests": {
+		"modmenu": "*"
 	}
 }
